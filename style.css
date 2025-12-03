@@ -1,0 +1,195 @@
+/* ===== БАЗОВЫЙ МАКЕТ ===== */
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #e5e7eb;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+}
+
+.app {
+    margin-top: 40px;
+    width: 100%;
+    max-width: 960px;
+    background: #020617;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.45);
+    padding: 24px 28px 32px;
+    box-sizing: border-box;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.app-title {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.app-subtitle {
+    font-size: 13px;
+    color: #9ca3af;
+}
+
+.user-info {
+    text-align: right;
+}
+
+.user-info__name {
+    font-weight: 600;
+}
+.user-info__id {
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+/* ===== ТАБЫ ===== */
+
+.tabs {
+    display: flex;
+    border-radius: 12px;
+    background: #020617;
+    border: 1px solid #1f2937;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px 0;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #9ca3af;
+    background: transparent;
+    transition: background 0.2s, color 0.2s;
+}
+
+.tab-btn.active {
+    background: #111827;
+    color: #f9fafb;
+}
+
+.tab-btn:not(.active):hover {
+    background: #030712;
+}
+
+/* ===== КОЛОНКИ ===== */
+
+.grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1.1fr 0.8fr;
+    gap: 16px;
+}
+
+@media (max-width: 920px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===== КАРТОЧКИ ===== */
+
+.card {
+    background: #020617;
+    border-radius: 12px;
+    border: 1px solid #1f2937;
+    padding: 16px;
+}
+
+/* ===== ТЕКСТ / ПОЛЯ ===== */
+
+.text-block {
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+.text-muted { color: #6b7280; }
+.small { font-size: 11px; }
+
+.field { margin-bottom: 10px; }
+.field label {
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+.input {
+    width: 100%;
+    padding: 8px;
+    background: #020617;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    color: #e5e7eb;
+}
+
+/* ===== КНОПКИ ===== */
+
+.btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #022c22;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #374151;
+}
+
+/* ===== СТАТУСЫ ===== */
+
+.status { font-size: 12px; margin-top: 6px; }
+.status--error { color: #f97373; }
+.status--success { color: #4ade80; }
+.status--info { color: #93c5fd; }
+
+.balance { font-size: 24px; font-weight: bold; }
+.balance-label { font-size: 12px; color: #9ca3af; }
+
+/* ===== ПРОЧЕЕ ===== */
+
+.hidden { display: none; }
+.operations-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.divider {
+    height: 1px;
+    background: #111827;
+    margin: 10px 0;
+}
+
+.badge {
+    border: 1px solid #1f2937;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: #9ca3af;
+}
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    background: #22c55e;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+}
+/* Узкая версия контейнера */
+.app--narrow {
+    max-width: 420px;
+    margin-top: 60px;
+}

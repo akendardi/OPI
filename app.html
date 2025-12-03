@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Банк ОПИ — Личный кабинет</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="mainPage">
+  <header class="app-header">
+    <div>
+      <div class="app-title">Банк ОПИ</div>
+      <div class="app-subtitle">Личный кабинет клиента</div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="user-info" id="userInfoBlock">
+        <span class="user-info__name text-muted">Гость</span>
+        <span class="user-info__id small">Не авторизован</span>
+      </div>
+      <!-- КНОПКА ВЫХОДА -->
+      <button id="logoutBtn" class="btn btn-secondary">Выйти</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Операции по счету -->
+    <section class="card" id="opsBlock">
+      <div class="card-title">Операции по счету</div>
+      <div class="card-subtitle">Пополнение, снятие и переводы по ID.</div>
+
+      <!-- Пополнение -->
+      <form id="topupForm">
+        <div class="field">
+          <label for="topupAmount">Пополнить баланс</label>
+          <input id="topupAmount" name="amount" class="input" type="number" step="0.01" min="0"
+                 placeholder="Сумма, ₽">
+        </div>
+        <button type="submit" class="btn">Пополнить</button>
+        <div id="topupStatus" class="status"></div>
+      </form>
+
+      <div class="divider"></div>
+
+      <!-- Снятие -->
+      <form id="withdrawForm">
+        <div class="field">
+          <label for="withdrawAmount">Снять со счета</label>
+          <input id="withdrawAmount" name="amount" class="input" type="number" step="0.01" min="0"
+                 placeholder="Сумма, ₽">
+        </div>
+        <button type="submit" class="btn btn-secondary">Снять</button>
+        <div id="withdrawStatus" class="status"></div>
+      </form>
+
+      <div class="divider"></div>
+
+      <!-- Перевод -->
+      <form id="transferForm">
+        <div class="field">
+          <label for="transferTo">ID получателя</label>
+          <input id="transferTo" class="input" type="number" min="1" placeholder="ID пользователя">
+        </div>
+        <div class="field">
+          <label for="transferAmount">Сумма перевода</label>
+          <input id="transferAmount" class="input" type="number" step="0.01" min="0"
+                 placeholder="Сумма, ₽">
+        </div>
+
+        <button type="submit" class="btn">Перевести</button>
+        <button type="button" id="refreshBalanceBtn" class="btn btn-secondary">Обновить баланс (GET)</button>
+
+        <div id="transferStatus" class="status"></div>
+      </form>
+    </section>
+
+    <!-- Состояние счета -->
+    <aside class="card">
+      <div class="card-title">Состояние счета</div>
+      <div class="card-subtitle">Баланс по данным сервера/мока.</div>
+
+      <p class="text-block">
+        <span class="balance-label">Текущий баланс:</span><br>
+        <span class="balance" id="balanceValue">—</span> ₽
+      </p>
+
+      <div class="divider"></div>
+
+      <div class="badge">
+        <span class="badge-dot"></span>
+        API: <span id="apiUrlText" style="margin-left:4px;"></span>
+      </div>
+
+      <div id="debugStatus" class="status status--info" style="margin-top:8px;"></div>
+    </aside>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

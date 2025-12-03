@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Банк ОПИ — Вход и регистрация</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app app--narrow" id="authPage">
+    <header class="app-header">
+        <div>
+            <div class="app-title">Банк ОПИ</div>
+            <div class="app-subtitle">Вход в личный кабинет</div>
+        </div>
+    </header>
+
+    <!-- Форма входа -->
+    <section class="card" id="loginCard">
+        <div class="card-title">Вход в аккаунт</div>
+
+        <form id="loginForm">
+            <div class="field">
+                <label for="loginLogin">Логин</label>
+                <input id="loginLogin" name="login" class="input" placeholder="email или ID">
+            </div>
+            <div class="field">
+                <label for="loginPassword">Пароль</label>
+                <input id="loginPassword" name="password" type="password" class="input">
+            </div>
+            <button type="submit" class="btn">Войти</button>
+            <div id="loginStatus" class="status"></div>
+        </form>
+    </section>
+
+    <!-- КНОПКА СОЗДАТЬ АККАУНТ -->
+    <div id="openRegBtnWrapper" style="text-align:center; margin-top:16px;">
+        <button id="toggleRegisterBtn" class="btn btn-secondary">Создать аккаунт</button>
+    </div>
+
+    <!-- Форма регистрации -->
+    <section class="card hidden" id="registerCard" style="margin-top:16px;">
+        <div class="card-title">Регистрация</div>
+
+        <form id="registerForm">
+            <div class="field">
+                <label for="regFullName">ФИО</label>
+                <input id="regFullName" class="input">
+            </div>
+
+            <div class="field">
+                <label for="regEmail">E-mail</label>
+                <input id="regEmail" class="input" type="email">
+            </div>
+
+            <div class="field">
+                <label for="regPassword">Пароль</label>
+                <input id="regPassword" class="input" type="password">
+            </div>
+
+            <button type="submit" class="btn">Зарегистрироваться</button>
+            <div id="registerStatus" class="status"></div>
+        </form>
+
+        <!-- Кнопка снизу -->
+        <div style="text-align:center; margin-top:16px;">
+            <button id="backToLoginBtn" class="btn btn-secondary">Вернуться ко входу</button>
+        </div>
+    </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
