@@ -193,3 +193,54 @@ body {
     max-width: 420px;
     margin-top: 60px;
 }
+.account-item {
+    border: 1px solid #1f2937;
+    padding: 12px;
+    border-radius: 10px;
+    background: #0b1220;
+    margin-bottom: 12px;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.account-item:hover {
+    border-color: #374151;
+    background: #111827;
+}
+
+/* Выбранный счет */
+.account-item.selected {
+    border: 1px solid #22c55e;
+    background: #06200f;
+}
+
+/* Маленькие кнопки */
+.btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.btn-small:hover {
+    opacity: 0.9;
+}
+
+.account-item .btn-small {
+    flex: 1;
+}
+
+/* Для блока кнопок внутри счета */
+.account-item button {
+    width: 100%;
+}
+
+/* Разделение кнопок */
+.account-item div[style*="display:flex"] {
+    margin-top: 6px;
+}
+
+/* Отключённая кнопка (например, выбран уже) */
+.btn-small.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}

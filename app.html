@@ -10,7 +10,7 @@
   <header class="app-header">
     <div>
       <div class="app-title">Банк ОПИ</div>
-      <div class="app-subtitle">Личный кабинет клиента</div>
+      <div class="app-subtitle">Управление счетами</div>
     </div>
 
     <div style="display:flex; align-items:center; gap:12px;">
@@ -18,23 +18,40 @@
         <span class="user-info__name text-muted">Гость</span>
         <span class="user-info__id small">Не авторизован</span>
       </div>
-      <!-- КНОПКА ВЫХОДА -->
+
       <button id="logoutBtn" class="btn btn-secondary">Выйти</button>
     </div>
   </header>
 
   <div class="grid">
-    <!-- Операции по счету -->
-    <section class="card" id="opsBlock">
-      <div class="card-title">Операции по счету</div>
-      <div class="card-subtitle">Пополнение, снятие и переводы по ID.</div>
+
+    <!-- БЛОК СЧЕТОВ -->
+    <section class="card" id="accountsCard">
+      <div class="card-title">Ваши счета</div>
+      <div class="card-subtitle">До 3 счетов на одного пользователя</div>
+
+      <div id="accountsList" style="margin-top:10px;"></div>
+
+      <div style="margin-top:12px; text-align:center;">
+        <button id="createAccountBtn" class="btn">Создать счёт</button>
+      </div>
+
+      <div id="accountStatus" class="status"></div>
+    </section>
+
+    <!-- ОПЕРАЦИИ -->
+    <section class="card">
+      <div class="card-title">Операции</div>
+
+      <p class="text-block text-muted">
+        Выберите счёт из списка слева, затем выполните действие.
+      </p>
 
       <!-- Пополнение -->
       <form id="topupForm">
         <div class="field">
-          <label for="topupAmount">Пополнить баланс</label>
-          <input id="topupAmount" name="amount" class="input" type="number" step="0.01" min="0"
-                 placeholder="Сумма, ₽">
+          <label for="topupAmount">Пополнить (₽)</label>
+          <input id="topupAmount" type="number" min="1" step="0.01" class="input">
         </div>
         <button type="submit" class="btn">Пополнить</button>
         <div id="topupStatus" class="status"></div>
@@ -45,9 +62,8 @@
       <!-- Снятие -->
       <form id="withdrawForm">
         <div class="field">
-          <label for="withdrawAmount">Снять со счета</label>
-          <input id="withdrawAmount" name="amount" class="input" type="number" step="0.01" min="0"
-                 placeholder="Сумма, ₽">
+          <label for="withdrawAmount">Снять (₽)</label>
+          <input id="withdrawAmount" type="number" min="1" step="0.01" class="input">
         </div>
         <button type="submit" class="btn btn-secondary">Снять</button>
         <div id="withdrawStatus" class="status"></div>
@@ -58,37 +74,42 @@
       <!-- Перевод -->
       <form id="transferForm">
         <div class="field">
-          <label for="transferTo">ID получателя</label>
-          <input id="transferTo" class="input" type="number" min="1" placeholder="ID пользователя">
+          <label for="transferTo">Номер счёта получателя (16 цифр)</label>
+          <input id="transferTo" type="text" maxlength="16" class="input">
         </div>
         <div class="field">
-          <label for="transferAmount">Сумма перевода</label>
-          <input id="transferAmount" class="input" type="number" step="0.01" min="0"
-                 placeholder="Сумма, ₽">
+          <label for="transferAmount">Сумма перевода (₽)</label>
+          <input id="transferAmount" type="number" min="1" step="0.01" class="input">
         </div>
-
         <button type="submit" class="btn">Перевести</button>
-        <button type="button" id="refreshBalanceBtn" class="btn btn-secondary">Обновить баланс (GET)</button>
 
         <div id="transferStatus" class="status"></div>
       </form>
+
+      <div style="margin-top:16px;">
+        <button id="refreshBalanceBtn" class="btn btn-secondary">Обновить баланс (GET)</button>
+      </div>
     </section>
 
-    <!-- Состояние счета -->
+    <!-- БАЛАНС АКТИВНОГО СЧЕТА -->
     <aside class="card">
       <div class="card-title">Состояние счета</div>
-      <div class="card-subtitle">Баланс по данным сервера/мока.</div>
+      <div class="card-subtitle">Показан баланс выбранного счёта</div>
 
       <p class="text-block">
-        <span class="balance-label">Текущий баланс:</span><br>
+        <span class="balance-label">Баланс:</span><br>
         <span class="balance" id="balanceValue">—</span> ₽
+      </p>
+
+      <p class="text-block small text-muted">
+        Текущий счёт: <span id="selectedAccountLabel">не выбран</span>
       </p>
 
       <div class="divider"></div>
 
       <div class="badge">
         <span class="badge-dot"></span>
-        API: <span id="apiUrlText" style="margin-left:4px;"></span>
+        API: <span id="apiUrlText"></span>
       </div>
 
       <div id="debugStatus" class="status status--info" style="margin-top:8px;"></div>
