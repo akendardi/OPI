@@ -1,0 +1,10 @@
+# IDE garbage
+.idea/
+*.iml
+
+# compiled binaries
+*.cgi
+*.o
+
+# temp files
+*.tmp

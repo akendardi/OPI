@@ -5,7 +5,7 @@ const API_URL = "/cgi-bin/bank.cgi";
 
 // true  – тестовый режим, всё в localStorage
 // false – обращаться к CGI по API_URL
-const USE_MOCK = true;
+const USE_MOCK = false;
 
 
 // ================= "БД" ДЛЯ MOCK (localStorage) =================
