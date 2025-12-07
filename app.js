@@ -1,21 +1,13 @@
-// ================= НАСТРОЙКИ =================
 
-// URL реального CGI-сервиса (когда будет готов back-end)
 const API_URL = "/cgi-bin/bank.cgi";
 
-// true  – тестовый режим, всё в localStorage
-// false – обращаться к CGI по API_URL
 const USE_MOCK = false;
-
-
-// ================= "БД" ДЛЯ MOCK (localStorage) =================
 
 function loadMockDb() {
     try {
         const raw = localStorage.getItem("mockBankDb");
         if (!raw) return { users: [], nextUserId: 1 };
         const db = JSON.parse(raw);
-        // нормализуем accounts
         db.users.forEach(u => {
             if (!Array.isArray(u.accounts)) u.accounts = [];
         });
@@ -32,11 +24,9 @@ function saveMockDb() {
 let mockDb = loadMockDb();
 
 
-// ================= ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ =================
-
 let currentUserId = null;
 let currentUserName = null;
-let currentAccounts = []; // массив счетов пользователя
+let currentAccounts = [];
 let selectedAccountNumber = null;
 
 function setCurrentUser(id, name, accounts) {
@@ -83,9 +73,6 @@ function getSelectedAccount() {
     return currentAccounts.find(a => a.number === selectedAccountNumber) || null;
 }
 
-
-// ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ UI =================
-
 function $(id) {
     return document.getElementById(id);
 }
@@ -126,7 +113,6 @@ function updateBalanceUI() {
         selLabel.textContent = "не выбран";
     } else {
         balEl.textContent = Number(acc.balance || 0).toFixed(2);
-        // красиво форматируем номер по 4 цифры
         selLabel.textContent = acc.number.replace(/(.{4})/g, "$1 ").trim();
     }
 }
@@ -171,12 +157,11 @@ function renderAccounts() {
         container.appendChild(wrapper);
     });
 
-    // обработчики
     container.querySelectorAll("button[data-role='select']").forEach(btn => {
         btn.addEventListener("click", () => {
             selectedAccountNumber = btn.dataset.acc;
             updateBalanceUI();
-            renderAccounts(); // перерисовать, чтобы подсветить выбранный
+            renderAccounts();
         });
     });
 
@@ -187,9 +172,6 @@ function renderAccounts() {
         });
     });
 }
-
-
-// ================= MOCK-СЕРВЕР =================
 
 function findMockUserById(id) {
     const numId = Number(id);
@@ -216,8 +198,6 @@ function generateAccountNumber() {
     }
     return base + rest;
 }
-
-// --- REGISTER ---
 function mockRegister({ fullName, email, password }) {
     if (!fullName || !email || !password || password.length < 6) {
         return { success: false, message: "Некорректные данные регистрации (MOCK)." };
@@ -230,7 +210,7 @@ function mockRegister({ fullName, email, password }) {
         fullName,
         email,
         password,
-        accounts: [] // без счетов по умолчанию
+        accounts: []
     };
     mockDb.users.push(user);
     saveMockDb();
@@ -242,7 +222,6 @@ function mockRegister({ fullName, email, password }) {
     };
 }
 
-// --- LOGIN ---
 function mockLogin({ login, password }) {
     const user = findMockUserByLogin(login);
     if (!user || user.password !== password) {
@@ -256,7 +235,6 @@ function mockLogin({ login, password }) {
     };
 }
 
-// --- GET ACCOUNTS ---
 function mockGetAccounts({ userId }) {
     const user = findMockUserById(userId);
     if (!user) return { success: false, message: "Пользователь не найден (MOCK)." };
@@ -266,7 +244,6 @@ function mockGetAccounts({ userId }) {
     };
 }
 
-// --- CREATE ACCOUNT ---
 function mockCreateAccount({ userId }) {
     const user = findMockUserById(userId);
     if (!user) return { success: false, message: "Пользователь не найден (MOCK)." };
@@ -283,7 +260,6 @@ function mockCreateAccount({ userId }) {
     };
 }
 
-// --- DELETE ACCOUNT ---
 function mockDeleteAccount({ userId, accountNumber }) {
     const user = findMockUserById(userId);
     if (!user) return { success: false, message: "Пользователь не найден (MOCK)." };
@@ -297,7 +273,6 @@ function mockDeleteAccount({ userId, accountNumber }) {
     return { success: true, message: "Счёт удалён (MOCK)." };
 }
 
-// --- TOPUP ---
 function mockTopup({ accountNumber, amount }) {
     const sum = Number(amount);
     if (!(sum > 0)) return { success: false, message: "Сумма должна быть > 0 (MOCK)." };
@@ -313,7 +288,6 @@ function mockTopup({ accountNumber, amount }) {
     return { success: true, message: "Баланс пополнен (MOCK).", newBalance: acc.balance };
 }
 
-// --- WITHDRAW ---
 function mockWithdraw({ accountNumber, amount }) {
     const sum = Number(amount);
     if (!(sum > 0)) return { success: false, message: "Сумма должна быть > 0 (MOCK)." };
@@ -330,7 +304,6 @@ function mockWithdraw({ accountNumber, amount }) {
     return { success: true, message: "Снятие выполнено (MOCK).", newBalance: acc.balance };
 }
 
-// --- TRANSFER ---
 function mockTransfer({ fromAccount, toAccount, amount }) {
     const sum = Number(amount);
     if (!(sum > 0)) return { success: false, message: "Сумма должна быть > 0 (MOCK)." };
@@ -356,8 +329,6 @@ function mockTransfer({ fromAccount, toAccount, amount }) {
         newBalance: fromAcc.balance
     };
 }
-
-// --- GET BALANCE (для одного счёта) ---
 function mockGetBalance({ accountNumber }) {
     let acc = null;
     for (const u of mockDb.users) {
@@ -368,7 +339,6 @@ function mockGetBalance({ accountNumber }) {
     return { success: true, balance: acc.balance, message: "Баланс получен (MOCK)." };
 }
 
-// универсальный mock dispatcher
 function mockPost(action, data) {
     switch (action) {
         case "register": return mockRegister(data);
@@ -384,9 +354,6 @@ function mockPost(action, data) {
             return { success: false, message: "Неизвестное действие (MOCK): " + action };
     }
 }
-
-
-// ================= ОТПРАВКА ЗАПРОСОВ (MOCK / CGI) =================
 
 async function sendPostToServer(action, data) {
     if (USE_MOCK) {
@@ -413,7 +380,6 @@ async function fetchAccountsFromServer(userId) {
     if (USE_MOCK) {
         return sendPostToServer("getAccounts", { userId });
     }
-    // CGI: GET /cgi-bin/bank.cgi?action=getAccounts&userId=...
     const resp = await fetch(`${API_URL}?action=getAccounts&userId=${encodeURIComponent(userId)}`);
     const text = await resp.text();
     try {
@@ -436,9 +402,6 @@ async function fetchBalanceFromServer(accountNumber) {
     }
 }
 
-
-// ================= ЛОГИКА AUTH.HTML =================
-
 function initAuthPage() {
     const loginCard = $("loginCard");
     const registerCard = $("registerCard");
@@ -446,7 +409,6 @@ function initAuthPage() {
     const openRegBtnWrapper = $("openRegBtnWrapper");
     const backBtn = $("backToLoginBtn");
 
-    // открыть регистрацию
     if (openRegBtn && loginCard && registerCard && openRegBtnWrapper) {
         openRegBtn.addEventListener("click", () => {
             loginCard.classList.add("hidden");
@@ -454,8 +416,6 @@ function initAuthPage() {
             registerCard.classList.remove("hidden");
         });
     }
-
-    // вернуться ко входу
     if (backBtn && loginCard && registerCard && openRegBtnWrapper) {
         backBtn.addEventListener("click", () => {
             registerCard.classList.add("hidden");
@@ -463,8 +423,6 @@ function initAuthPage() {
             openRegBtnWrapper.classList.remove("hidden");
         });
     }
-
-    // ВХОД
     const loginForm = $("loginForm");
     if (loginForm) {
         loginForm.addEventListener("submit", async (e) => {
@@ -489,8 +447,6 @@ function initAuthPage() {
             }
         });
     }
-
-    // РЕГИСТРАЦИЯ
     const registerForm = $("registerForm");
     if (registerForm) {
         registerForm.addEventListener("submit", async (e) => {
@@ -518,9 +474,6 @@ function initAuthPage() {
     }
 }
 
-
-// ================= ЛОГИКА APP.HTML (ЛИЧНЫЙ КАБИНЕТ) =================
-
 async function initMainPage() {
     const hasUser = loadCurrentUserFromStorage();
     if (!hasUser) {
@@ -540,8 +493,6 @@ async function initMainPage() {
             "status--info"
         );
     }
-
-    // выходим из аккаунта
     const logoutBtn = $("logoutBtn");
     if (logoutBtn) {
         logoutBtn.addEventListener("click", () => {
@@ -549,8 +500,6 @@ async function initMainPage() {
             window.location.href = "auth.html";
         });
     }
-
-    // получаем счета пользователя
     const res = await fetchAccountsFromServer(currentUserId);
     if (res.success) {
         currentAccounts = res.accounts || [];
@@ -566,8 +515,6 @@ async function initMainPage() {
 
     renderAccounts();
     updateBalanceUI();
-
-    // СОЗДАТЬ СЧЕТ
     const createBtn = $("createAccountBtn");
     if (createBtn) {
         createBtn.addEventListener("click", async () => {
@@ -578,7 +525,6 @@ async function initMainPage() {
             setStatus("accountStatus", "Создание счёта...", "status--info");
             const r = await sendPostToServer("createAccount", { userId: currentUserId });
             if (r.success) {
-                // подгружаем счета заново
                 const res2 = await fetchAccountsFromServer(currentUserId);
                 if (res2.success) {
                     currentAccounts = res2.accounts || [];
@@ -595,8 +541,6 @@ async function initMainPage() {
             }
         });
     }
-
-    // ПОПОЛНЕНИЕ
     const topupForm = $("topupForm");
     if (topupForm) {
         topupForm.addEventListener("submit", async (e) => {
@@ -616,7 +560,6 @@ async function initMainPage() {
                 amount
             });
             if (r.success) {
-                // обновляем баланс конкретного счёта
                 const acc = getSelectedAccount();
                 if (acc) acc.balance = r.newBalance ?? (Number(acc.balance) + amount);
                 storeAccountsToLocal();
@@ -628,8 +571,6 @@ async function initMainPage() {
             }
         });
     }
-
-    // СНЯТИЕ
     const withdrawForm = $("withdrawForm");
     if (withdrawForm) {
         withdrawForm.addEventListener("submit", async (e) => {
@@ -660,8 +601,6 @@ async function initMainPage() {
             }
         });
     }
-
-    // ПЕРЕВОД
     const transferForm = $("transferForm");
     if (transferForm) {
         transferForm.addEventListener("submit", async (e) => {
@@ -698,8 +637,6 @@ async function initMainPage() {
             }
         });
     }
-
-    // ОБНОВИТЬ БАЛАНС (GET)
     const refreshBtn = $("refreshBalanceBtn");
     if (refreshBtn) {
         refreshBtn.addEventListener("click", async () => {
@@ -722,8 +659,6 @@ async function initMainPage() {
         });
     }
 }
-
-// удаление счета (с проверкой баланса и подтверждением)
 async function handleDeleteAccount(accountNumber) {
     const acc = currentAccounts.find(a => a.number === accountNumber);
     if (!acc) {
@@ -748,7 +683,6 @@ async function handleDeleteAccount(accountNumber) {
     });
 
     if (r.success) {
-        // обновляем список
         const res = await fetchAccountsFromServer(currentUserId);
         if (res.success) {
             currentAccounts = res.accounts || [];
@@ -766,9 +700,6 @@ async function handleDeleteAccount(accountNumber) {
         setStatus("accountStatus", r.message || "Ошибка при удалении счёта.", "status--error");
     }
 }
-
-
-// ================= ТОЧКА ВХОДА =================
 
 document.addEventListener("DOMContentLoaded", () => {
     const isAuth = document.getElementById("authPage");
