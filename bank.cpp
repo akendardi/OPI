@@ -1,26 +1,29 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <fstream>
 #include <sstream>
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
+#include <stdexcept>
 
 #include <cgicc/Cgicc.h>
 #include <cgicc/HTTPPlainHeader.h>
+#include <libpq-fe.h>
 
 using namespace std;
 using namespace cgicc;
 
-// ===================== "БД" НА ФАЙЛЕ =====================
+// ===================== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К Postgres =====================
 
-// Файл, где будем хранить пользователей и счета (временно вместо PostgreSQL)
-const char* DB_PATH = "/tmp/bankdb.txt";
+// Подправь под свою конфигурацию:
+const char* CONNINFO = "dbname=bankdb user=bank_user password=Dima1234 host=localhost port=5432";
+
+// ===================== ВСПОМОГАТЕЛЬНЫЕ СТРУКТУРЫ (НЕ БД, ПРОСТО ДЛЯ УДОБСТВА) =====================
 
 struct Account {
-    string number;   // 16-значный номер
-    double balance;  // баланс
+    string number;
+    double balance;
 };
 
 struct User {
@@ -28,128 +31,28 @@ struct User {
     string fullName;
     string email;
     string password;
-    vector<Account> accounts;
 };
 
-static vector<User> g_users;
-static int g_nextUserId = 1;
+// ===================== RAII-ОБЁРТКА ДЛЯ СОЕДИНЕНИЯ С БД =====================
 
-// простенький split по символу
-vector<string> split(const string& s, char delim) {
-    vector<string> parts;
-    string item;
-    stringstream ss(s);
-    while (getline(ss, item, delim)) {
-        parts.push_back(item);
-    }
-    return parts;
-}
+struct PgConn {
+    PGconn* conn;
 
-// загрузка "БД" из файла
-void loadDb() {
-    g_users.clear();
-    g_nextUserId = 1;
-
-    ifstream f(DB_PATH);
-    if (!f.is_open()) {
-        return; // файла нет — первая загрузка
-    }
-
-    string line;
-    int maxId = 0;
-
-    while (getline(f, line)) {
-        if (line.empty()) continue;
-        auto parts = split(line, '|');
-        if (parts.size() == 0) continue;
-
-        if (parts[0] == "USER" && parts.size() >= 5) {
-            User u;
-            u.id       = stoi(parts[1]);
-            u.fullName = parts[2];
-            u.email    = parts[3];
-            u.password = parts[4];
-            g_users.push_back(u);
-            if (u.id > maxId) maxId = u.id;
-        } else if (parts[0] == "ACC" && parts.size() >= 4) {
-            int userId = stoi(parts[1]);
-            string number = parts[2];
-            double balance = stod(parts[3]);
-            auto it = find_if(g_users.begin(), g_users.end(),
-                              [userId](const User& u){ return u.id == userId; });
-            if (it != g_users.end()) {
-                it->accounts.push_back(Account{number, balance});
-            }
+    PgConn() {
+        conn = PQconnectdb(CONNINFO);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            string msg = PQerrorMessage(conn);
+            PQfinish(conn);
+            throw runtime_error("Ошибка подключения к БД: " + msg);
         }
     }
 
-    if (maxId > 0) {
-        g_nextUserId = maxId + 1;
-    }
-}
-
-// сохранение "БД" в файл
-void saveDb() {
-    ofstream f(DB_PATH, ios::trunc);
-    if (!f.is_open()) {
-        // На реальном проекте тут логируем ошибку
-        return;
-    }
-    for (const auto& u : g_users) {
-        f << "USER|" << u.id << "|" << u.fullName << "|" << u.email << "|" << u.password << "\n";
-        for (const auto& acc : u.accounts) {
-            f << "ACC|" << u.id << "|" << acc.number << "|" << acc.balance << "\n";
+    ~PgConn() {
+        if (conn) {
+            PQfinish(conn);
         }
     }
-}
-
-// генерация 16-значного номера счёта (как в mock: 4000 + 12 цифр)
-string generateAccountNumber() {
-    string num = "4000";
-    for (int i = 0; i < 12; ++i) {
-        int d = rand() % 10;
-        num.push_back('0' + d);
-    }
-    return num;
-}
-
-User* findUserById(int id) {
-    for (auto& u : g_users) {
-        if (u.id == id) return &u;
-    }
-    return nullptr;
-}
-
-// login: может быть либо ID, либо email
-User* findUserByLogin(const string& login) {
-    // если login — чисто число, пробуем как id
-    bool allDigits = !login.empty();
-    for (char c : login) {
-        if (!isdigit((unsigned char)c)) { allDigits = false; break; }
-    }
-    if (allDigits) {
-        int id = stoi(login);
-        return findUserById(id);
-    }
-    // иначе ищем по email
-    for (auto& u : g_users) {
-        if (u.email == login) return &u;
-    }
-    return nullptr;
-}
-
-// поиск счёта по номеру
-Account* findAccountByNumber(const string& number, User** ownerOut = nullptr) {
-    for (auto& u : g_users) {
-        for (auto& acc : u.accounts) {
-            if (acc.number == number) {
-                if (ownerOut) *ownerOut = &u;
-                return &acc;
-            }
-        }
-    }
-    return nullptr;
-}
+};
 
 // ===================== ВСПОМОГАТЕЛЬНЫЕ ШТУКИ =====================
 
@@ -201,7 +104,199 @@ string getParam(Cgicc& cgi, const string& name, bool& present) {
     return it->getValue();
 }
 
-// ===================== HANDLERS (как в mock в JS) =====================
+bool isAllDigits(const string& s) {
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (!isdigit((unsigned char)c)) return false;
+    }
+    return true;
+}
+
+// генерация 16-значного номера счёта (как раньше)
+string generateAccountNumber() {
+    string num = "4000";
+    for (int i = 0; i < 12; ++i) {
+        int d = rand() % 10;
+        num.push_back('0' + d);
+    }
+    return num;
+}
+
+// ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ РАБОТЫ С БД =====================
+
+// Проверка, существует ли пользователь по id
+bool dbUserExists(PGconn* conn, int userId) {
+    const char* params[1];
+    string userIdStr = to_string(userId);
+    params[0] = userIdStr.c_str();
+
+    PGresult* res = PQexecParams(
+        conn,
+        "SELECT 1 FROM users WHERE id = $1",
+        1,
+        nullptr,
+        params,
+        nullptr,
+        nullptr,
+        0
+    );
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        PQclear(res);
+        throw runtime_error("Ошибка запроса к БД (dbUserExists)");
+    }
+
+    bool exists = (PQntuples(res) > 0);
+    PQclear(res);
+    return exists;
+}
+
+// Получить пользователя по логину (id или email)
+bool dbFindUserByLogin(PGconn* conn, const string& login, User& outUser) {
+    PGresult* res = nullptr;
+    const char* params[1];
+
+    if (isAllDigits(login)) {
+        string idStr = login;
+        params[0] = idStr.c_str();
+
+        res = PQexecParams(
+            conn,
+            "SELECT id, full_name, email, password FROM users WHERE id = $1::int",
+            1,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+    } else {
+        params[0] = login.c_str();
+        res = PQexecParams(
+            conn,
+            "SELECT id, full_name, email, password FROM users WHERE email = $1",
+            1,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+    }
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        PQclear(res);
+        throw runtime_error("Ошибка запроса к БД (dbFindUserByLogin)");
+    }
+
+    if (PQntuples(res) == 0) {
+        PQclear(res);
+        return false;
+    }
+
+    outUser.id       = stoi(PQgetvalue(res, 0, 0));
+    outUser.fullName = PQgetvalue(res, 0, 1);
+    outUser.email    = PQgetvalue(res, 0, 2);
+    outUser.password = PQgetvalue(res, 0, 3);
+
+    PQclear(res);
+    return true;
+}
+
+// Получить все счета пользователя
+vector<Account> dbGetAccounts(PGconn* conn, int userId) {
+    const char* params[1];
+    string userIdStr = to_string(userId);
+    params[0] = userIdStr.c_str();
+
+    PGresult* res = PQexecParams(
+        conn,
+        "SELECT number, balance FROM accounts WHERE user_id = $1 ORDER BY id",
+        1,
+        nullptr,
+        params,
+        nullptr,
+        nullptr,
+        0
+    );
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        PQclear(res);
+        throw runtime_error("Ошибка запроса к БД (dbGetAccounts)");
+    }
+
+    vector<Account> result;
+    int rows = PQntuples(res);
+    for (int i = 0; i < rows; ++i) {
+        Account a;
+        a.number  = PQgetvalue(res, i, 0);
+        a.balance = stod(PQgetvalue(res, i, 1));
+        result.push_back(a);
+    }
+
+    PQclear(res);
+    return result;
+}
+
+// Подсчитать количество счетов пользователя
+int dbCountAccounts(PGconn* conn, int userId) {
+    const char* params[1];
+    string userIdStr = to_string(userId);
+    params[0] = userIdStr.c_str();
+
+    PGresult* res = PQexecParams(
+        conn,
+        "SELECT COUNT(*) FROM accounts WHERE user_id = $1",
+        1,
+        nullptr,
+        params,
+        nullptr,
+        nullptr,
+        0
+    );
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        PQclear(res);
+        throw runtime_error("Ошибка запроса к БД (dbCountAccounts)");
+    }
+
+    int count = stoi(PQgetvalue(res, 0, 0));
+    PQclear(res);
+    return count;
+}
+
+// Найти баланс счёта по номеру (если нет — возвращаем false)
+bool dbGetAccountBalance(PGconn* conn, const string& accNumber, double& balanceOut) {
+    const char* params[1];
+    params[0] = accNumber.c_str();
+
+    PGresult* res = PQexecParams(
+        conn,
+        "SELECT balance FROM accounts WHERE number = $1",
+        1,
+        nullptr,
+        params,
+        nullptr,
+        nullptr,
+        0
+    );
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        PQclear(res);
+        throw runtime_error("Ошибка запроса к БД (dbGetAccountBalance)");
+    }
+
+    if (PQntuples(res) == 0) {
+        PQclear(res);
+        return false;
+    }
+
+    balanceOut = stod(PQgetvalue(res, 0, 0));
+    PQclear(res);
+    return true;
+}
+
+// ===================== HANDLERS =====================
 
 // REGISTER
 void handleRegister(Cgicc& cgi) {
@@ -215,27 +310,70 @@ void handleRegister(Cgicc& cgi) {
         return;
     }
 
-    // проверка на уникальность email
-    for (const auto& u : g_users) {
-        if (u.email == email) {
+    try {
+        PgConn db;
+
+        // Проверка уникальности email
+        const char* params[1];
+        params[0] = email.c_str();
+        PGresult* res = PQexecParams(
+            db.conn,
+            "SELECT id FROM users WHERE email = $1",
+            1,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка запроса к БД (register: check email)");
+        }
+
+        if (PQntuples(res) > 0) {
+            PQclear(res);
             jsonError("Пользователь с таким email уже существует.");
             return;
         }
+        PQclear(res);
+
+        // Вставка пользователя
+        const char* params2[3];
+        params2[0] = fullName.c_str();
+        params2[1] = email.c_str();
+        params2[2] = password.c_str();
+
+        res = PQexecParams(
+            db.conn,
+            "INSERT INTO users(full_name, email, password) "
+            "VALUES ($1, $2, $3) RETURNING id",
+            3,
+            nullptr,
+            params2,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
+            PQclear(res);
+            throw runtime_error("Ошибка вставки пользователя.");
+        }
+
+        int newId = stoi(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Регистрация выполнена.\", "
+             << "\"userId\": " << newId << ", "
+             << "\"fullName\": \"" << fullName << "\" }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (register): ") + e.what());
     }
-
-    User u;
-    u.id = g_nextUserId++;
-    u.fullName = fullName;
-    u.email = email;
-    u.password = password;
-    g_users.push_back(u);
-    saveDb();
-
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Регистрация выполнена.\", "
-         << "\"userId\": " << u.id << ", "
-         << "\"fullName\": \"" << u.fullName << "\" }";
 }
 
 // LOGIN
@@ -249,17 +387,23 @@ void handleLogin(Cgicc& cgi) {
         return;
     }
 
-    User* u = findUserByLogin(login);
-    if (!u || u->password != password) {
-        jsonError("Неверный логин или пароль.");
-        return;
-    }
+    try {
+        PgConn db;
+        User u;
+        if (!dbFindUserByLogin(db.conn, login, u) || u.password != password) {
+            jsonError("Неверный логин или пароль.");
+            return;
+        }
 
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Вход выполнен.\", "
-         << "\"userId\": " << u->id << ", "
-         << "\"fullName\": \"" << u->fullName << "\" }";
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Вход выполнен.\", "
+             << "\"userId\": " << u.id << ", "
+             << "\"fullName\": \"" << u.fullName << "\" }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (login): ") + e.what());
+    }
 }
 
 // GET ACCOUNTS
@@ -277,23 +421,30 @@ void handleGetAccounts(Cgicc& cgi) {
         return;
     }
 
-    User* u = findUserById(userId);
-    if (!u) {
-        jsonError("Пользователь не найден.");
-        return;
+    try {
+        PgConn db;
+
+        if (!dbUserExists(db.conn, userId)) {
+            jsonError("Пользователь не найден.");
+            return;
+        }
+
+        auto accounts = dbGetAccounts(db.conn, userId);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, \"accounts\": [";
+
+        for (size_t i = 0; i < accounts.size(); ++i) {
+            if (i > 0) cout << ", ";
+            cout << "{ \"number\": \"" << accounts[i].number << "\", "
+                 << "\"balance\": " << accounts[i].balance << " }";
+        }
+
+        cout << "] }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (getAccounts): ") + e.what());
     }
-
-    printJsonHeader();
-    cout << "{ \"success\": true, \"accounts\": [";
-
-    for (size_t i = 0; i < u->accounts.size(); ++i) {
-        const auto& acc = u->accounts[i];
-        if (i > 0) cout << ", ";
-        cout << "{ \"number\": \"" << acc.number << "\", "
-             << "\"balance\": " << acc.balance << " }";
-    }
-
-    cout << "] }";
 }
 
 // CREATE ACCOUNT
@@ -311,25 +462,75 @@ void handleCreateAccount(Cgicc& cgi) {
         return;
     }
 
-    User* u = findUserById(userId);
-    if (!u) {
-        jsonError("Пользователь не найден.");
-        return;
+    try {
+        PgConn db;
+
+        if (!dbUserExists(db.conn, userId)) {
+            jsonError("Пользователь не найден.");
+            return;
+        }
+
+        int cnt = dbCountAccounts(db.conn, userId);
+        if (cnt >= 3) {
+            jsonError("Нельзя создать больше 3 счетов.");
+            return;
+        }
+
+        // Генерим номер и вставляем. На всякий случай можно проверить на уникальность.
+        string accNumber;
+        while (true) {
+            accNumber = generateAccountNumber();
+            const char* paramsCheck[1];
+            paramsCheck[0] = accNumber.c_str();
+            PGresult* resCheck = PQexecParams(
+                db.conn,
+                "SELECT 1 FROM accounts WHERE number = $1",
+                1,
+                nullptr,
+                paramsCheck,
+                nullptr,
+                nullptr,
+                0
+            );
+            if (PQresultStatus(resCheck) != PGRES_TUPLES_OK) {
+                PQclear(resCheck);
+                throw runtime_error("Ошибка проверки номера счета.");
+            }
+            bool exists = (PQntuples(resCheck) > 0);
+            PQclear(resCheck);
+            if (!exists) break; // нашли уникальный
+        }
+
+        const char* params[2];
+        string userIdStr = to_string(userId);
+        params[0] = userIdStr.c_str();
+        params[1] = accNumber.c_str();
+
+        PGresult* res = PQexecParams(
+            db.conn,
+            "INSERT INTO accounts(user_id, number, balance) VALUES ($1::int, $2, 0)",
+            2,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка вставки счета.");
+        }
+        PQclear(res);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Счёт создан.\", "
+             << "\"accountNumber\": \"" << accNumber << "\" }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (createAccount): ") + e.what());
     }
-
-    if (u->accounts.size() >= 3) {
-        jsonError("Нельзя создать больше 3 счетов.");
-        return;
-    }
-
-    string num = generateAccountNumber();
-    u->accounts.push_back(Account{num, 0.0});
-    saveDb();
-
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Счёт создан.\", "
-         << "\"accountNumber\": \"" << num << "\" }";
 }
 
 // DELETE ACCOUNT
@@ -349,28 +550,68 @@ void handleDeleteAccount(Cgicc& cgi) {
         return;
     }
 
-    User* u = findUserById(userId);
-    if (!u) {
-        jsonError("Пользователь не найден.");
-        return;
+    try {
+        PgConn db;
+
+        // Сначала узнаём баланс и принадлежность
+        const char* params[2];
+        string userIdStr = to_string(userId);
+        params[0] = userIdStr.c_str();
+        params[1] = accNumber.c_str();
+
+        PGresult* res = PQexecParams(
+            db.conn,
+            "SELECT balance FROM accounts WHERE user_id = $1::int AND number = $2",
+            2,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка запроса к БД (deleteAccount: select)");
+        }
+
+        if (PQntuples(res) == 0) {
+            PQclear(res);
+            jsonError("Счёт не найден.");
+            return;
+        }
+
+        double balance = stod(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        if (balance > 0.0) {
+            jsonError("Нельзя удалить счёт с ненулевым балансом.");
+            return;
+        }
+
+        // Удаляем
+        res = PQexecParams(
+            db.conn,
+            "DELETE FROM accounts WHERE user_id = $1::int AND number = $2",
+            2,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка удаления счета.");
+        }
+
+        PQclear(res);
+        jsonOkMessage("Счёт удалён.");
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (deleteAccount): ") + e.what());
     }
-
-    auto it = find_if(u->accounts.begin(), u->accounts.end(),
-                      [&accNumber](const Account& a){ return a.number == accNumber; });
-    if (it == u->accounts.end()) {
-        jsonError("Счёт не найден.");
-        return;
-    }
-
-    if (it->balance > 0.0) {
-        jsonError("Нельзя удалить счёт с ненулевым балансом.");
-        return;
-    }
-
-    u->accounts.erase(it);
-    saveDb();
-
-    jsonOkMessage("Счёт удалён.");
 }
 
 // TOPUP
@@ -390,20 +631,49 @@ void handleTopup(Cgicc& cgi) {
         return;
     }
 
-    User* owner = nullptr;
-    Account* acc = findAccountByNumber(accNumber, &owner);
-    if (!acc) {
-        jsonError("Счёт не найден.");
-        return;
+    try {
+        PgConn db;
+
+        const char* params[2];
+        params[0] = accNumber.c_str();
+        string amountStr = to_string(amount);
+        params[1] = amountStr.c_str();
+
+        PGresult* res = PQexecParams(
+            db.conn,
+            "UPDATE accounts SET balance = balance + $2::double precision "
+            "WHERE number = $1 "
+            "RETURNING balance",
+            2,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка обновления баланса (topup).");
+        }
+
+        if (PQntuples(res) == 0) {
+            PQclear(res);
+            jsonError("Счёт не найден.");
+            return;
+        }
+
+        double newBalance = stod(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Баланс пополнен.\", "
+             << "\"newBalance\": " << newBalance << " }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (topup): ") + e.what());
     }
-
-    acc->balance += amount;
-    saveDb();
-
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Баланс пополнен.\", "
-         << "\"newBalance\": " << acc->balance << " }";
 }
 
 // WITHDRAW
@@ -423,25 +693,61 @@ void handleWithdraw(Cgicc& cgi) {
         return;
     }
 
-    User* owner = nullptr;
-    Account* acc = findAccountByNumber(accNumber, &owner);
-    if (!acc) {
-        jsonError("Счёт не найден.");
-        return;
+    try {
+        PgConn db;
+
+        // Сначала узнаём баланс
+        double balance = 0.0;
+        if (!dbGetAccountBalance(db.conn, accNumber, balance)) {
+            jsonError("Счёт не найден.");
+            return;
+        }
+
+        if (balance < amount) {
+            jsonError("Недостаточно средств.");
+            return;
+        }
+
+        const char* params[2];
+        params[0] = accNumber.c_str();
+        string amountStr = to_string(amount);
+        params[1] = amountStr.c_str();
+
+        PGresult* res = PQexecParams(
+            db.conn,
+            "UPDATE accounts SET balance = balance - $2::double precision "
+            "WHERE number = $1 "
+            "RETURNING balance",
+            2,
+            nullptr,
+            params,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка обновления баланса (withdraw).");
+        }
+
+        if (PQntuples(res) == 0) {
+            PQclear(res);
+            jsonError("Счёт не найден.");
+            return;
+        }
+
+        double newBalance = stod(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Снятие выполнено.\", "
+             << "\"newBalance\": " << newBalance << " }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (withdraw): ") + e.what());
     }
-
-    if (acc->balance < amount) {
-        jsonError("Недостаточно средств.");
-        return;
-    }
-
-    acc->balance -= amount;
-    saveDb();
-
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Снятие выполнено.\", "
-         << "\"newBalance\": " << acc->balance << " }";
 }
 
 // TRANSFER
@@ -468,36 +774,156 @@ void handleTransfer(Cgicc& cgi) {
         return;
     }
 
-    User* ownerFrom = nullptr;
-    User* ownerTo   = nullptr;
-    Account* accFrom = findAccountByNumber(fromAccNumber, &ownerFrom);
-    Account* accTo   = findAccountByNumber(toAccNumber,   &ownerTo);
+    try {
+        PgConn db;
 
-    if (!accFrom) {
-        jsonError("Счёт-отправитель не найден.");
-        return;
+        // Транзакция
+        PGresult* res = PQexec(db.conn, "BEGIN");
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            throw runtime_error("Не удалось начать транзакцию.");
+        }
+        PQclear(res);
+
+        // Блокируем обе записи (FOR UPDATE)
+        const char* paramsFrom[1];
+        paramsFrom[0] = fromAccNumber.c_str();
+        res = PQexecParams(
+            db.conn,
+            "SELECT balance FROM accounts WHERE number = $1 FOR UPDATE",
+            1,
+            nullptr,
+            paramsFrom,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            throw runtime_error("Ошибка выборки счета-отправителя.");
+        }
+
+        if (PQntuples(res) == 0) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            jsonError("Счёт-отправитель не найден.");
+            return;
+        }
+
+        double fromBalance = stod(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        const char* paramsTo[1];
+        paramsTo[0] = toAccNumber.c_str();
+        res = PQexecParams(
+            db.conn,
+            "SELECT balance FROM accounts WHERE number = $1 FOR UPDATE",
+            1,
+            nullptr,
+            paramsTo,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            throw runtime_error("Ошибка выборки счета-получателя.");
+        }
+
+        if (PQntuples(res) == 0) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            jsonError("Счёт-получатель не найден.");
+            return;
+        }
+
+        double toBalance = stod(PQgetvalue(res, 0, 0));
+        PQclear(res);
+
+        if (fromBalance < amount) {
+            PQexec(db.conn, "ROLLBACK");
+            jsonError("Недостаточно средств.");
+            return;
+        }
+
+        // Обновляем оба счета
+        const char* paramsUpdateFrom[2];
+        const char* paramsUpdateTo[2];
+        string amountStr = to_string(amount);
+        paramsUpdateFrom[0] = amountStr.c_str();
+        paramsUpdateFrom[1] = fromAccNumber.c_str();
+
+        paramsUpdateTo[0] = amountStr.c_str();
+        paramsUpdateTo[1] = toAccNumber.c_str();
+
+        res = PQexecParams(
+            db.conn,
+            "UPDATE accounts SET balance = balance - $1::double precision "
+            "WHERE number = $2",
+            2,
+            nullptr,
+            paramsUpdateFrom,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            throw runtime_error("Ошибка списания со счета-отправителя.");
+        }
+        PQclear(res);
+
+        res = PQexecParams(
+            db.conn,
+            "UPDATE accounts SET balance = balance + $1::double precision "
+            "WHERE number = $2",
+            2,
+            nullptr,
+            paramsUpdateTo,
+            nullptr,
+            nullptr,
+            0
+        );
+
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            PQexec(db.conn, "ROLLBACK");
+            throw runtime_error("Ошибка зачисления на счёт-получатель.");
+        }
+        PQclear(res);
+
+        // Получим новый баланс отправителя для ответа
+        double newFromBalance = 0.0;
+        if (!dbGetAccountBalance(db.conn, fromAccNumber, newFromBalance)) {
+            PQexec(db.conn, "ROLLBACK");
+            jsonError("Счёт-отправитель не найден после обновления (странно).");
+            return;
+        }
+
+        res = PQexec(db.conn, "COMMIT");
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            PQclear(res);
+            throw runtime_error("Ошибка коммита транзакции.");
+        }
+        PQclear(res);
+
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"message\": \"Перевод выполнен.\", "
+             << "\"newBalance\": " << newFromBalance << " }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (transfer): ") + e.what());
     }
-    if (!accTo) {
-        jsonError("Счёт-получатель не найден.");
-        return;
-    }
-
-    if (accFrom->balance < amount) {
-        jsonError("Недостаточно средств.");
-        return;
-    }
-
-    accFrom->balance -= amount;
-    accTo->balance   += amount;
-    saveDb();
-
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"message\": \"Перевод выполнен.\", "
-         << "\"newBalance\": " << accFrom->balance << " }";
 }
 
-// GET BALANCE (по номеру счёта)
+// GET BALANCE
 void handleGetBalance(Cgicc& cgi) {
     bool pAcc;
     string accNumber = getParam(cgi, "accountNumber", pAcc);
@@ -506,28 +932,29 @@ void handleGetBalance(Cgicc& cgi) {
         return;
     }
 
-    User* owner = nullptr;
-    Account* acc = findAccountByNumber(accNumber, &owner);
-    if (!acc) {
-        jsonError("Счёт не найден.");
-        return;
-    }
+    try {
+        PgConn db;
+        double balance = 0.0;
+        if (!dbGetAccountBalance(db.conn, accNumber, balance)) {
+            jsonError("Счёт не найден.");
+            return;
+        }
 
-    printJsonHeader();
-    cout << "{ \"success\": true, "
-         << "\"balance\": " << acc->balance << ", "
-         << "\"message\": \"Баланс получен.\" }";
+        printJsonHeader();
+        cout << "{ \"success\": true, "
+             << "\"balance\": " << balance << ", "
+             << "\"message\": \"Баланс получен.\" }";
+
+    } catch (const exception& e) {
+        jsonError(string("Внутренняя ошибка (getBalance): ") + e.what());
+    }
 }
 
 // ===================== MAIN =====================
 
 int main() {
     try {
-        // инициализация rand для генерации номеров счетов
         srand(static_cast<unsigned>(time(nullptr)));
-
-        // загружаем "БД" из файла при каждом запросе
-        loadDb();
 
         Cgicc cgi;
 
@@ -551,7 +978,7 @@ int main() {
             jsonError("Неизвестное действие: " + action);
         }
 
-    } catch (exception& e) {
+    } catch (const exception& e) {
         jsonError(string("Внутренняя ошибка: ") + e.what());
     } catch (...) {
         jsonError("Неизвестная внутренняя ошибка.");
