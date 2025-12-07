@@ -16,7 +16,6 @@ using namespace cgicc;
 
 // ===================== НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К Postgres =====================
 
-// Подправь под свою конфигурацию:
 const char* CONNINFO = "dbname=bankdb user=bank_user password=Dima1234 host=localhost port=5432";
 
 // ===================== ВСПОМОГАТЕЛЬНЫЕ СТРУКТУРЫ (НЕ БД, ПРОСТО ДЛЯ УДОБСТВА) =====================
@@ -112,7 +111,7 @@ bool isAllDigits(const string& s) {
     return true;
 }
 
-// генерация 16-значного номера счёта (как раньше)
+// генерация 16-значного номера счётa
 string generateAccountNumber() {
     string num = "4000";
     for (int i = 0; i < 12; ++i) {
